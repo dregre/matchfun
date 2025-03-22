@@ -1,4 +1,4 @@
-import { match } from './impl/impl.js'
+import { match, NoMatch } from './impl/impl.js'
 
-export { match }
-export default { match }
+export { match, NoMatch }
+export default { match, NoMatch }
