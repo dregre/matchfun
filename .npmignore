@@ -1,0 +1,32 @@
+# Development files
+.git
+.gitignore
+.DS_Store
+.editorconfig
+.eslintrc
+.eslintignore
+.babelrc
+.npmrc
+*.log
+*.tgz
+
+# Source files (since we're distributing the dist folder)
+src/
+tests/
+examples/
+
+# Build config files
+vite.config.js
+.github/
+public/
+
+# Build artifacts
+coverage/
+node_modules/
+.vscode/
+.idea/
+
+# Misc
+*.env
+*.md
+!README.md 
