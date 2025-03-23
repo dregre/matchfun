@@ -491,6 +491,51 @@ const result6 = match(
 
 Anonymous pattern matching is useful when you need to match against specific conditions but don't need to extract values from the input.
 
+### Chaining Pattern Methods
+
+You can chain multiple pattern methods together on the same pattern. When you chain methods, all conditions must be satisfied for the match to succeed, effectively creating a logical AND operation. This works with both named mvars and anonymous patterns:
+
+```javascript
+import { match } from 'matchfun';
+
+// Chaining with named mvars
+const result1 = match(
+  { data: [1, 2, 3, 4], type: 'array', id: 'ARR-1234' },
+  ([data, id]) => [
+    () => ({ 
+      // All of these conditions must be true:
+      data: data.ofType('array')        // Must be an array
+                .when(arr => arr.length > 2)  // AND must have more than 2 elements
+                .when(arr => arr.every(n => n > 0)), // AND all elements must be positive
+      id: id.regex(/^ARR-\d{4}$/)       // Must match regex
+           .not('ARR-0000')             // AND must not be 'ARR-0000'
+    }),
+    () => 'Valid array data'
+  ]
+);
+// result1: 'Valid array data'
+
+// Chaining with anonymous patterns
+const result2 = match(
+  { code: 'ABC-1234', count: 42, status: 'active' },
+  ([], { ofType, regex, when, not }) => [
+    () => ({ 
+      code: regex(/^[A-Z]{3}-\d{4}$/)
+           .not('ABC-0000', 'XXX-9999'),  // Must match regex AND not be these values
+      count: ofType('number')
+             .when(n => n > 0)            // Must be number AND positive
+             .when(n => n % 2 === 0),     // AND even
+      status: not('inactive', 'pending')
+              .not('suspended')           // Must not be any of these values
+    }),
+    () => 'All conditions met'
+  ]
+);
+// result2: 'All conditions met'
+```
+
+In the examples above, the match will only succeed if all chained conditions are satisfied. Chaining provides a concise way to express multiple conditions that must all be satisfied for a successful match.
+
 ### Regex Pattern Matching
 
 You can use the `regex()` pattern method to match string values against regular expressions:
