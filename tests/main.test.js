@@ -447,6 +447,57 @@ describe('match function', () => {
             )
         ).toEqual({})
     })
+
+    it('applies chained patterns in the order they are defined', () => {
+        // This test verifies that multiple chained patterns are applied in sequence
+        
+        // Create a complex processing pipeline with multiple pattern types:
+        // 1. Start with a string 'data-42-xyz'
+        // 2. First check: verify it matches our expected format
+        // 3. Transform: extract the numeric part and convert to number
+        // 4. Check type: confirm it's a number
+        // 5. Check value: ensure it's > 30
+        // 6. Transform: multiply by 2
+        // 7. Transform: convert to string with prefix
+        // 8. Final check: ensure it's not one of our blacklisted values
+        
+        const result = match(
+            'data-42-xyz',
+            ([val]) => [
+                () => val
+                    .when(v => v.startsWith('data-'))        // Verify format
+                    .then(v => parseInt(v.split('-')[1]))    // Extract number
+                    .ofType('number')                        // Check type
+                    .when(n => n > 30)                       // Value check
+                    .then(n => n * 2)                        // Transform
+                    .then(n => `Value: ${n}`)                // Format
+                    .not('Value: 100', 'Value: 0'),          // Exclude values
+                () => val,
+                () => 'Result'
+            ]
+        );
+        
+        // With proper chaining order, this should yield "Value: 84"
+        // (extract 42, verify > 30, multiply by 2 = 84, format, verify not excluded)
+        expect(result).toEqual('Value: 84');
+        
+        // Also test a chain with an OR pattern
+        const result2 = match(
+            { type: 'user', id: 123, role: 'admin' },
+            ([obj]) => [
+                () => obj
+                    .ofType('object')                      // Check type
+                    .when(o => o.type === 'user')          // Check property
+                    .then(o => o.role)                     // Extract property
+                    .or('admin', 'moderator')              // Check allowed values
+                    .then(role => role.toUpperCase()),     // Transform
+                () => obj,
+                () => 'Invalid'
+            ]
+        );
+        
+        expect(result2).toEqual('ADMIN');
+    })
 })
 
 describe('partition function', () => {

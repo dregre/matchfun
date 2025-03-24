@@ -23,9 +23,7 @@ export class Var {
             emit,
             type,
             ownSymbol: Symbol(),
-            orPatterns: [],
-            notPatterns: [],
-            predicates: [],
+            operations: [],
         }
     }
 
@@ -41,23 +39,12 @@ export class Var {
         return this[Sym.CONFIG].ownSymbol
     }
 
-    get [Sym.OR_PATTERNS]() {
-        return this[Sym.CONFIG].orPatterns
-    }
-
-    get [Sym.NOT_PATTERNS]() {
-        return this[Sym.CONFIG].notPatterns
-    }
-
     get [Sym.MVAR]() {
         return this[Sym.CONFIG].mvar ?? this
     }
 
-    [Sym.THEN](val) {
-        const then = this[Sym.CONFIG].then
-        return then
-            ? then.reduce((val, fn) => fn(val), val)
-            : val
+    get [Sym.OPERATIONS]() {
+        return this[Sym.CONFIG].operations ?? []
     }
 
     toString() {
@@ -67,19 +54,35 @@ export class Var {
 
 class MVar extends Var {
     when(...predicates) {
-        return new DerivedMVar({ base: this, predicates, type: 'when' })
+        return new DerivedMVar({
+            base: this, type: 'when',
+            operations: [(input) => when(input, predicates)]
+        })
     }
 
-    then(...fns) {
-        return new DerivedMVar({ base: this, then: fns, type: 'then' })
-    }
-
-    or(...orPatterns) {
-        return new DerivedMVar({ base: this, orPatterns, type: 'or' })
+    then(...xforms) {
+        return new DerivedMVar({
+            base: this, type: 'then',
+            operations: [(input) => then(input, xforms)]
+        })
     }
 
     not(...notPatterns) {
-        return new DerivedMVar({ base: this, notPatterns, type: 'not' })
+        return new DerivedMVar({
+            base: this, type: 'not',
+            operations: [(input, mvarsAndWildcard) => not(input, notPatterns, mvarsAndWildcard)]
+        })
+    }
+
+    or(...orPatterns) {
+        return new DerivedMVar({
+            base: this, orPatterns, type: 'or',
+            operations: [(input, mvarsAndWildcard) => or(input, orPatterns, mvarsAndWildcard)]
+        })
+    }
+
+    get optional() {
+        return new DerivedMVar({ base: this, type: 'optional', optional: true })
     }
 
     ofType(t) {
@@ -95,27 +98,6 @@ class MVar extends Var {
         return this.when((input) => re.test(input))
     }
 
-    applyPredicates(input) {
-        const { predicates } = this[Sym.CONFIG]
-        for (const pred of predicates) {
-            if (!pred(input)) return false
-        }
-        return true
-    }
-
-    enforceGuards(input) {
-        if (!this.applyPredicates(input)) {
-            throw new NoMatch(
-                "Input does not fit provided guards.\n" +
-                `Input: ${input}`
-            )
-        }
-    }
-
-    get optional() {
-        return new DerivedMVar({ base: this, optional: true, type: 'optional' })
-    }
-
     get opt() {
         return this.optional
     }
@@ -126,29 +108,17 @@ function notOptional(base) {
 }
 
 class DerivedMVar extends MVar {
-    [Sym.SET_CONFIG]({ base, then = [], orPatterns = [], notPatterns = [], predicates = [], type = 'derived', optional }) {
+    [Sym.SET_CONFIG]({ base, type = 'derived', optional, operations = [] }) {
         const baseConfig = base[Sym.CONFIG]
         this[Sym.CONFIG] = {
             ...baseConfig,
             mvar: baseConfig.mvar ?? base,
-            then: [
-                ...baseConfig.then ?? [],
-                ...then,
-            ],
             type,
-            orPatterns: [
-                ...baseConfig.orPatterns ?? [],
-                ...orPatterns,
-            ],
-            notPatterns: [
-                ...baseConfig.notPatterns ?? [],
-                ...notPatterns,
-            ],
-            predicates: [
-                ...baseConfig.predicates ?? [],
-                ...predicates,
-            ],
-            optional: optional ?? baseConfig.optional ?? false
+            optional: optional ?? baseConfig.optional ?? false,
+            operations: [
+                ...baseConfig.operations ?? [],
+                ...operations
+            ]
         }
     }
 }
@@ -199,25 +169,51 @@ function isNoMatch(x) {
     return x instanceof NoMatch
 }
 
-function* emitBindingPairs(mvar, val, mvarsAndWildcard) {
-    if (!checkNotPatterns(mvar, val, mvarsAndWildcard)) {
-        throw new NoMatch(
-            "Input matches a negated pattern.\n" +
-            `Input: ${val}`
-        )
+function when(input, predicates) {
+    for (const pred of predicates) {
+        if (!pred(input))
+            throw new NoMatch(
+                'Input matches a negated pattern.\n' +
+                `Input: ${input}`
+            )
     }
-
-    mvar.enforceGuards(val)
-    if (mvar[Sym.EMIT])
-        yield [mvar[Sym.MVAR], mvar[Sym.THEN](val)]
-    yield* genBindingsForOrPatterns(mvar, val, mvarsAndWildcard)
+    return { input }
 }
 
-function checkNotPatterns(mvar, input, mvarsAndWildcard) {
-    const notPatterns = mvar[Sym.NOT_PATTERNS]
+function not(input, notPatterns, mvarsAndWildcard) {
+    if (!checkNotPatterns(input, notPatterns, mvarsAndWildcard)) {
+        throw new NoMatch(
+            'Input matches a negated pattern.\n' +
+            `Input: ${input}`
+        )
+    }
+    return { input }
+}
 
-    if (!notPatterns.length) return true
+function then(input, xforms) {
+    return { input: xforms.reduce((input, xform) => xform(input), input) }
+}
 
+function or(input, orPatterns, mvarsAndWildcard) {
+    if (!orPatterns.length) return { input }
+
+    for (const orPattern of orPatterns) {
+        try {
+            return { input, innerBindings: [...genBindings(orPattern, input, mvarsAndWildcard)] }
+        } catch (e) {
+            if (!isNoMatch(e)) {
+                throw e
+            }
+        }
+    }
+
+    throw new NoMatch(
+        'Input does not match provided or-patterns.\n' +
+        `Input: ${input}`
+    )
+}
+
+function checkNotPatterns(input, notPatterns, mvarsAndWildcard) {
     for (const notPattern of notPatterns) {
         try {
             // If any pattern matches, then the not pattern fails
@@ -235,13 +231,24 @@ function checkNotPatterns(mvar, input, mvarsAndWildcard) {
     return true
 }
 
+function* emitBindingPairs(mvar, val, mvarsAndWildcard) {
+    let input = val
+    let innerBindings = []
+    for (const operation of mvar[Sym.OPERATIONS]) {
+        ({ input, innerBindings =[] } = operation(input, mvarsAndWildcard))
+        yield* innerBindings
+    }
+    if (mvar[Sym.EMIT])
+        yield [mvar[Sym.MVAR], input]
+}
+
 function* genBindingsForArray(pattern, input, mvarsAndWildcard) {
     let arrayRestFound = false
     let j = 0
     for (let i = 0; i < pattern.length; i++) {
         if (isMVarArrayRest(pattern[i])) {
             if (arrayRestFound) {
-                throw new BindingError(`Only one rest mvar allowed in array.`)
+                throw new BindingError('Only one rest mvar allowed in array.')
             }
             arrayRestFound = true
             const end = input.length - (pattern.length - i - 1)
@@ -301,27 +308,6 @@ function* genBindingsForObject(pattern, input, mvarsAndWildcard) {
     }
 }
 
-function genBindingsForOrPatterns(mvar, input, mvarsAndWildcard) {
-    const orPatterns = mvar[Sym.OR_PATTERNS]
-
-    if (!orPatterns.length) return []
-
-    for (const orPattern of orPatterns) {
-        try {
-            return [...genBindings(orPattern, input, mvarsAndWildcard)]
-        } catch (e) {
-            if (!isNoMatch(e)) {
-                throw e
-            }
-        }
-    }
-
-    throw new NoMatch(
-        "Input does not match provided or-patterns.\n" +
-        `Input: ${input}`
-    )
-}
-
 export function* genBindings(pattern, input, mvarsAndWildcard) {
     if (isOptional(pattern)) {
         throw new BindingError('Optional patterns only allowed in array patterns.')
@@ -353,7 +339,7 @@ export function* genBindings(pattern, input, mvarsAndWildcard) {
 
     else if (pattern !== input) {
         throw new NoMatch(
-            "Input does not match provided pattern.\n" +
+            'Input does not match provided pattern.\n' +
             `Pattern: ${pattern}\nInput: ${input}`
         )
     }
@@ -364,7 +350,7 @@ function checkNoMultipleObjectRestMVars(pattern, mvars) {
     for (const mvar of mvars) {
         if (pattern[mvar[Sym.SYMBOL]]) {
             if (objectRestFound) {
-                throw new BindingError(`Only one rest mvar allowed in object.`)
+                throw new BindingError('Only one rest mvar allowed in object.')
             }
             objectRestFound = true
         }
@@ -404,9 +390,9 @@ function partitionExpressions(expressions, ...args) {
 function tryMatch(input, expressions) {
     const { mvars, generate } = mvarGenerator()
     const _ = wildcard()
-    const patternOpts = { 
-        _, 
-        or: (...args) => mvar(false).or(...args), 
+    const patternOpts = {
+        _,
+        or: (...args) => mvar(false).or(...args),
         ofType: (...args) => mvar(false).ofType(...args),
         regex: (re) => mvar(false).regex(re),
         when: (predicate) => mvar(false).when(predicate),
@@ -439,7 +425,7 @@ function tryMatch(input, expressions) {
     }
 
     throw new NoMatch(
-        "No valid matches for any patterns and no default case provided."
+        'No valid matches for any patterns and no default case provided.'
     )
 }
 
