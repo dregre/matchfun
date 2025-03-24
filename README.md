@@ -567,6 +567,61 @@ const result2 = match(
 // result2: 'Found SKU code in first position'
 ```
 
+#### Capturing Groups with `matchGroup`
+
+The `regex()` method also supports extracting specific capturing groups from your regex matches using the optional `matchGroup` parameter. This makes it easy to extract specific parts of matched patterns:
+
+```javascript
+import { match } from 'matchfun';
+
+// Extract user ID from a string pattern
+const result1 = match(
+  { userId: 'user-12345', productId: 'prod-abc-789' },
+  ([userIdObj, productIdObj]) => [
+    () => ({ 
+      userId: userIdObj.regex(/^user-(\d+)$/, 1),  // Extract the numeric part (group 1)
+      productId: productIdObj.regex(/^prod-([a-z]+)-(\d+)$/, 2) // Extract the numeric part (group 2)
+    }),
+    ([numericUserId, numericProductId]) => ({
+      parsedUserId: numericUserId,
+      parsedProductId: numericProductId
+    })
+  ]
+);
+// result1: { parsedUserId: '12345', parsedProductId: '789' }
+
+// Extract and transform matched groups
+const result2 = match(
+  { orderId: 'ORD-12345' },
+  ([orderIdObj]) => [
+    () => ({ 
+      orderId: orderIdObj.regex(/^ORD-(\d+)$/, 1)
+        .then(id => parseInt(id))  // Convert to number
+        .when(id => id > 10000)    // Check if > 10000
+    }),
+    ([numericId]) => `ID > 10000: ${numericId}`
+  ]
+);
+// result2: 'ID > 10000: 12345'
+
+// Get the full match with matchGroup=0
+const result3 = match(
+  'https://example.com/users/12345/profile',
+  ([url]) => [
+    () => url.regex(/^https:\/\/[^/]+\/users\/(\d+)\/profile$/, 0), // Full match
+    ([fullUrl]) => `Matched URL: ${fullUrl}`
+  ]
+);
+// result3: 'Matched URL: https://example.com/users/12345/profile'
+```
+
+Using the `matchGroup` parameter:
+- `matchGroup=0` returns the full matched string
+- `matchGroup=1, 2, 3, ...` returns the corresponding capturing group from the pattern
+- No `matchGroup` parameter simply validates if the input matches the pattern
+
+You can chain operations after group extraction, allowing you to transform or further validate the extracted values.
+
 ### Type Checking with ofType
 
 The `ofType()` pattern method lets you match values by their JavaScript type:

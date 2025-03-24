@@ -1057,3 +1057,178 @@ describe('genBindings', () => {
         ])
     })
 })
+
+describe('regex with matchGroup', () => {
+    it('extracts capture groups from regex patterns using MVar syntax', () => {
+        const input = { userId: 'user-12345', productId: 'prod-abc-789' }
+        
+        const result = match(
+            input,
+            ([userIdObj, productIdObj]) => [
+                () => ({ 
+                    userId: userIdObj.regex(/^user-(\d+)$/, 1),  // Extract the numeric part (group 1)
+                    productId: productIdObj.regex(/^prod-([a-z]+)-(\d+)$/, 2) // Extract the numeric part (group 2)
+                }),
+                ([numericUserId, numericProductId]) => ({
+                    parsedUserId: numericUserId,
+                    parsedProductId: numericProductId
+                })
+            ]
+        )
+        
+        expect(result).toEqual({
+            parsedUserId: '12345',
+            parsedProductId: '789'
+        })
+    })
+
+    it('returns the full match when using matchGroup=0', () => {
+        const input = { email: 'test@example.com' }
+        
+        const result = match(
+            input,
+            ([emailObj]) => [
+                () => ({ 
+                    email: emailObj.regex(/([^@]+)@([^.]+)\.com/, 0) // Full match (group 0)
+                }),
+                ([fullEmail]) => fullEmail
+            ]
+        )
+        
+        expect(result).toBe('test@example.com')
+    })
+
+    it('extracts multiple groups from the same string', () => {
+        const input = 'date: 2023-04-15';
+        
+        const result = match(
+            input,
+            ([dateStr]) => [
+                () => dateStr.regex(/date: (\d{4})-(\d{2})-(\d{2})/, 0),
+                () => ({
+                    year: match(
+                        input,
+                        ([d]) => [
+                            () => d.regex(/date: (\d{4})-(\d{2})-(\d{2})/, 1),
+                            ([y]) => y
+                        ]
+                    ),
+                    month: match(
+                        input,
+                        ([d]) => [
+                            () => d.regex(/date: (\d{4})-(\d{2})-(\d{2})/, 2),
+                            ([m]) => m
+                        ]
+                    ),
+                    day: match(
+                        input,
+                        ([d]) => [
+                            () => d.regex(/date: (\d{4})-(\d{2})-(\d{2})/, 3),
+                            ([d]) => d
+                        ]
+                    )
+                })
+            ]
+        );
+        
+        expect(result).toEqual({
+            year: '2023',
+            month: '04',
+            day: '15'
+        })
+    })
+
+    it('chains operations after group extraction', () => {
+        const result = match(
+            { orderId: 'ORD-12345' },
+            ([orderIdObj]) => [
+                () => ({ 
+                    orderId: orderIdObj.regex(/^ORD-(\d+)$/, 1)
+                        .then(id => parseInt(id))  // Convert to number
+                        .when(id => id > 10000)    // Check if > 10000
+                }),
+                ([numericId]) => `ID > 10000: ${numericId}`
+            ]
+        )
+        
+        expect(result).toBe('ID > 10000: 12345')
+    })
+
+    it('throws NoMatch when the regex doesn\'t match', () => {
+        expect(() => match(
+            { id: 'invalid-format' },
+            ([idObj]) => [
+                () => ({ 
+                    id: idObj.regex(/^ID-(\d+)$/, 1)
+                }),
+                ([extractedId]) => extractedId
+            ]
+        )).toThrow(NoMatch)
+    })
+
+    it('uses anonymous pattern syntax for regex matching', () => {
+        const result = match(
+            'john_doe@example.com',
+            (_, { regex }) => [
+                () => regex(/^([a-z]+)_([a-z]+)@([^.]+)\.com$/),
+                () => 'Valid email format'
+            ]
+        )
+        
+        expect(result).toBe('Valid email format')
+    })
+
+    it('extracts URL parts and transforms them', () => {
+        const input = 'https://example.com/users/12345/profile';
+        
+        const result = match(
+            input,
+            ([url]) => [
+                // First extract the user ID from the URL with regex group 1
+                () => url.regex(/^https:\/\/[^/]+\/users\/(\d+)\/profile$/, 1),
+                // Then transform the extracted ID
+                ([userId]) => `User ID: ${parseInt(userId)}`
+            ]
+        )
+        
+        expect(result).toBe('User ID: 12345')
+    })
+
+    it('works with nested structure extraction', () => {
+        const input = {
+            user: {
+                profile: {
+                    contact: 'email:john@example.com;phone:555-1234'
+                }
+            }
+        }
+        
+        // For nested structures, we need to use the MVar for the deepest property
+        // that contains the string we want to match with regex
+        const result = match(
+            input,
+            ([contactInfo]) => [
+                () => ({
+                    user: {
+                        profile: {
+                            contact: contactInfo.regex(/email:([^;]+);phone:(.+)/, 0)
+                        }
+                    }
+                }),
+                () => {
+                    // We can use a regular expression match on the extracted string
+                    const matches = contactInfo.match(/email:([^;]+);phone:(.+)/);
+                    return {
+                        emailAddress: matches[1],
+                        phoneNumber: matches[2]
+                    }
+                }
+            ]
+        )
+        
+        expect(result).toEqual({
+            emailAddress: 'john@example.com',
+            phoneNumber: '555-1234'
+        })
+    })
+})

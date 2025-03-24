@@ -389,6 +389,55 @@ describe('Regex Pattern Matching', () => {
     )
     expect(result).toBe('Found SKU code: SKU-1234')
   })
+  
+  it('extracts capturing groups using matchGroup parameter', () => {
+    // Test extracting specific capturing groups from regex patterns
+    const result = match(
+      { userId: 'user-12345', productId: 'prod-abc-789' },
+      ([userIdObj, productIdObj]) => [
+        () => ({ 
+          userId: userIdObj.regex(/^user-(\d+)$/, 1),  // Extract the numeric part (group 1)
+          productId: productIdObj.regex(/^prod-([a-z]+)-(\d+)$/, 2) // Extract the numeric part (group 2)
+        }),
+        ([numericUserId, numericProductId]) => ({
+          parsedUserId: numericUserId,
+          parsedProductId: numericProductId
+        })
+      ]
+    )
+    expect(result).toEqual({
+      parsedUserId: '12345',
+      parsedProductId: '789'
+    })
+  })
+  
+  it('chains transformations on extracted regex groups', () => {
+    // Test chaining operations after extracted groups
+    const result = match(
+      { orderId: 'ORD-12345' },
+      ([orderIdObj]) => [
+        () => ({ 
+          orderId: orderIdObj.regex(/^ORD-(\d+)$/, 1)
+            .then(id => parseInt(id))  // Convert to number
+            .when(id => id > 10000)    // Check if > 10000
+        }),
+        ([numericId]) => `ID > 10000: ${numericId}`
+      ]
+    )
+    expect(result).toBe('ID > 10000: 12345')
+  })
+  
+  it('gets the full match with matchGroup=0', () => {
+    // Test getting the full match with matchGroup=0
+    const result = match(
+      'https://example.com/users/12345/profile',
+      ([url]) => [
+        () => url.regex(/^https:\/\/[^/]+\/users\/(\d+)\/profile$/, 0), // Full match
+        ([fullUrl]) => `Matched URL: ${fullUrl}`
+      ]
+    )
+    expect(result).toBe('Matched URL: https://example.com/users/12345/profile')
+  })
 })
 
 describe('Type Checking with ofType', () => {

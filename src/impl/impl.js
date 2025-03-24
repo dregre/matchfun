@@ -94,8 +94,11 @@ class MVar extends Var {
         })
     }
 
-    regex(re) {
-        return this.when((input) => re.test(input))
+    regex(re, matchGroup) {
+        if (typeof matchGroup != 'number')
+            return this.ofType('string').when((input) => re.test(input))
+
+        return this.regex(re).then((input) => input.match(re)[matchGroup])
     }
 
     get opt() {
