@@ -397,7 +397,7 @@ function tryMatch(input, expressions) {
         _,
         or: (...args) => mvar(false).or(...args),
         ofType: (...args) => mvar(false).ofType(...args),
-        regex: (re) => mvar(false).regex(re),
+        regex: (re, matchGroup) => mvar(false).regex(re, matchGroup),
         when: (predicate) => mvar(false).when(predicate),
         not: (...args) => mvar(false).not(...args)
     }
